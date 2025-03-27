@@ -15,39 +15,37 @@ This project aims to integrate [**m6Anet**](https://m6anet.readthedocs.io/en/lat
 
 ## **2. User Input and Data Requirements**  
 
-### **User Input**  
+**User Input**  
 The user will provide:  
 - **Nanopore direct RNA sequencing data** (BAM format)  
 - **Reference transcriptome** (FA format)  
 - **ONT reads file** (FASTA format)
 - **Refernece anotated genome data** (GTF format)
 
-### **Data Sources**  
+**Data Sources**  
 - **Nanopore sequencing data** (provided by the user)  
 - **GENCODE refernece anotated genome data** from gencode release.([Example](https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_47/gencode.v47.annotation.gtf.gz))
 - **M6ADD** database for linking modifications to diseases, genes, and pathways ([M6ADD Database](https://m6add.org))  
-- **Gene Ontology (GO) and KEGG Pathway Databases** for functional annotation  
+- **Gene Ontology (GO) and KEGG Pathway Databases** 
+  - **Gene Ontology API (via QuickGO)**  [https://www.ebi.ac.uk/QuickGO/](https://www.ebi.ac.uk/QuickGO/)  
+  - **KEGG API**  [https://www.kegg.jp/kegg/rest/keggapi.html](https://www.kegg.jp/kegg/rest/keggapi.html)  
 
 ---
 
-## **3. How Users Will Interact with the Program**  
+## **3. How Users Will Interact with the Program**   
 
-Users will interact through:  
-
-1. **Command-Line Interface (CLI)** for running the pipeline  
+1. **Command-Line Interface (CLI)** for running the programme
 2. **Web-based Interactive Dashboard** for exploring results  
 
-### **Example Usage:**  
+**Example Usage:**  
 
 ```bash
 m6amap --reads reads.fa --bam alignments.bam --genome genome.fa -G gencode.v47.annotation.gtf -O output_perfix
 ```
 
-### **Expected Outputs:**  
-- **annotated m6Anet Output (CSV format)**:  
+**Expected Outputs:**  
+- **Annotated m6Anet Output (CSV)**:  
   - RNA modification sites with confidence scores  and annotation
-- **M6ADD Output (JSON format)**:  
-  - Associated diseases, genes, pathways  
 - **Interactive Visualization**:  
   - **Network graphs** linking m6A sites to diseases and pathways. 
 
@@ -55,7 +53,7 @@ m6amap --reads reads.fa --bam alignments.bam --genome genome.fa -G gencode.v47.a
 
 ## **4. Expected Output Format & Interactive Visualization**  
 
-### **Text Output Example (CSV or JSON)**  
+### **Text Output Example (CSV)**  
 
 **Annotated m6Anet results (CSV):**
 
@@ -69,13 +67,24 @@ m6amap --reads reads.fa --bam alignments.bam --genome genome.fa -G gencode.v47.a
 ### **Interactive Visualization**  
 
 **1. Network Graph (m6A Sites → Genes → Diseases → Pathways)**  
-- **Nodes**: m6A sites, genes, diseases, pathways  
+- **Nodes**: genes
 - **Edges**: Relationships between them  
-- **Click**: View detailed annotations    
+- **Click**: View detailed annotations about the related pathways and diseases
+
+**2. Possible method:**
+  - **Interactive Visualization Using Python (Dash + Plotly)**
+ A python-based dashboard.
+  
+---
+## **5. What other tools currently exist to do this task, or something similar?**
+
+There are several tools that can predict m6a modification sites and also databases that annotate modification sites, but this project try to link this two kinds of tools.
 
 ---
 
-## **5. In Development** 
+## **6. In Development** 
+
+### Installation
 ```bash
 git clone https://github.com/nya0o0/project
 cd  src
