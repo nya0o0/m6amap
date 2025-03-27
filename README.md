@@ -26,7 +26,9 @@ The user will provide:
 - **Nanopore sequencing data** (provided by the user)  
 - **GENCODE refernece anotated genome data** from gencode release.([Example](https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_47/gencode.v47.annotation.gtf.gz))
 - **M6ADD** database for linking modifications to diseases, genes, and pathways ([M6ADD Database](https://m6add.org))  
-- **Gene Ontology (GO) and KEGG Pathway Databases** for functional annotation  
+- **Gene Ontology (GO) and KEGG Pathway Databases** 
+  - **Gene Ontology API (via QuickGO)** → [https://www.ebi.ac.uk/QuickGO/](https://www.ebi.ac.uk/QuickGO/)  
+  - **KEGG API** → [https://www.kegg.jp/kegg/rest/keggapi.html](https://www.kegg.jp/kegg/rest/keggapi.html)  
 
 ---
 
