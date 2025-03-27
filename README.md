@@ -1,5 +1,7 @@
 # **m6amap**  
 
+related mini-project: https://github.com/nya0o0/m6alinker
+
 ## **1. Introduction**  
 
 **What task will the project accomplish？**
