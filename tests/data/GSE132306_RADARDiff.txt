@@ -1,0 +1,3 @@
+Disease	Symbol_id	chr	strand	start	end	p_value	logFC	GSE	Treat_method
+T2D	FCGRT	chr19	+	49525041	49525090	9.6e-07	-2.219842666	GSE132306	METTL3 knockdown
+T2D	TBX2	chr17	+	61408371	61408420	6.6e-10	2.730029108	GSE132306	METTL3 knockdown

@@ -8,6 +8,7 @@ import warnings
 import sys
 import time
 import threading
+import glob
 
 def rolling_progress(message, stop_event):
     """
@@ -44,6 +45,8 @@ def process_files(input_file, gtf_file, output_prefix):
     # Load modification sites
     print(f"Loading input site file: {input_file}...")
     modification_sites = pd.read_csv(input_file)
+    # Remove the version number from the 'transcript_id' column
+    modification_sites['transcript_id'] = modification_sites['transcript_id'].str.split('.').str[0]
 
     # Create or load GTF database
     print(f"Checking or creating GTF database: {gtf_file}...")
@@ -299,3 +302,33 @@ def convert_to_genome_coordinates(tx_name, tx_pos, exonsdb, txfdb):
         "dist_down_exon_junc": dist_downstream,
         "region": region
     }
+
+def load_m6add_data(datatype):
+    """
+    Load and preprocess m6ADD dataset files.
+    """
+    files = glob.glob(f"tests/data/GSE*_{datatype}.txt")
+    dfs = []
+    for f in files:
+        df = pd.read_csv(f, sep="\t")
+        dfs.append(df)
+    df = pd.concat(dfs)
+    df["chr"] = df["chr"].astype(str).str.lower().str.replace("chr", "")
+    df["genome_pos"] = ((df["start"] + df["end"]) / 2).astype(int)
+    return df
+
+def fuzzy_merge(m6anet_df, m6add_df, window=3):
+    """
+    Perform fuzzy matching between m6anet and m6add dataframes based on genomic position.
+    """
+    matches = []
+    for _, row in m6anet_df.iterrows():
+        chr_match = m6add_df["chr"] == str(row["chromosome"])
+        pos_match = (m6add_df["genome_pos"] >= row["genome_pos"] - window) & \
+                    (m6add_df["genome_pos"] <= row["genome_pos"] + window)
+        match_df = m6add_df[chr_match & pos_match]
+        for _, match_row in match_df.iterrows():
+            combined = row.to_dict()
+            combined.update({f"m6add_{col}": match_row[col] for col in m6add_df.columns})
+            matches.append(combined)
+    return pd.DataFrame(matches)
