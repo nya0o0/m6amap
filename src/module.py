@@ -5,36 +5,17 @@ import numpy as np
 import gffutils
 from collections import defaultdict
 import warnings
-import sys
-import time
-import threading
 import glob
+import subprocess
+import streamlit as st
+import requests
+import networkx as nx
 
-def rolling_progress(message, stop_event):
-    """
-    Displays a rolling progress indicator in the terminal while a task is running.
 
-    Args:
-        message (str): The message to display before the indicator.
-        stop_event (threading.Event): An event to signal when to stop the animation.
-    """
-    symbols = ['|', '/', '-', '\\']  # Spinning symbols
-    sys.stdout.write(message)  
-    sys.stdout.flush()
-    
-    i = 0
-    while not stop_event.is_set():  # Keep updating until stop_event is triggered
-        sys.stdout.write(f"\b{symbols[i % len(symbols)]}")  # Overwrite last character
-        sys.stdout.flush()
-        time.sleep(0.2)  # Update every 0.2 seconds
-        i += 1
-    
-    sys.stdout.write("\b Done! :)\n")  # Replace spinner with a checkmark
-    sys.stdout.flush()
 
 def process_files(input_file, gtf_file, output_prefix):
     """
-    Main function to process input site files, annotate them using GTF data, and create a annotation CSV file.
+    Annotate m6anet results using a GTF file and display progress in Streamlit.
 
     Args:
         input_file (str): Path to the input CSV file containing modification sites.
@@ -42,108 +23,81 @@ def process_files(input_file, gtf_file, output_prefix):
         output_prefix (str): Prefix for the output annotated file.
     """
 
-    # Load modification sites
-    print(f"Loading input site file: {input_file}...")
-    modification_sites = pd.read_csv(input_file)
-    # Remove the version number from the 'transcript_id' column
-    modification_sites['transcript_id'] = modification_sites['transcript_id'].str.split('.').str[0]
+    with st.status(" Starting annotation process...", expanded=True) as status:
+        st.write(f"📂 Loading input site file: `{input_file}`...")
+        modification_sites = pd.read_csv(input_file)
+        modification_sites['transcript_id'] = modification_sites['transcript_id'].str.split('.').str[0]
+        
 
-    # Create or load GTF database
-    print(f"Checking or creating GTF database: {gtf_file}...")
-    
-    stop_event = threading.Event()  # Create an event to signal when to stop the animation
-    progress_thread = threading.Thread(target=rolling_progress, args=("Processing GTF database... ", stop_event))
-    progress_thread.start()  # Start the rolling animation
+        st.write(f"🧬 Preparing GTF database from `{gtf_file}`...")
+        db_file = gtf_file + ".db"
+        try: # Check whether the database already exists
+            db = gffutils.FeatureDB(db_file, keep_order=True)
+            st.write("✅ GTF database loaded.")
+        except:
+            st.write("🛠️ Creating GTF database...")
+            db = gffutils.create_db(gtf_file, dbfn=db_file, force=True, keep_order=True, disable_infer_genes=True, disable_infer_transcripts=True)
+            db = gffutils.FeatureDB(db_file, keep_order=True)
+            st.write("✅ GTF database loaded.")
 
-    db_file = gtf_file + ".db"
-    try: # Check whether the database already exists
-        db = gffutils.FeatureDB(db_file, keep_order=True)
-    except:
-        print("Creating GTF database...")
-        db = gffutils.create_db(gtf_file, dbfn=db_file, force=True, keep_order=True, disable_infer_genes=True, disable_infer_transcripts=True)
-        db = gffutils.FeatureDB(db_file, keep_order=True)
 
-    stop_event.set()  # Stop the rolling animation as soon as the task is done
-    progress_thread.join()  # Wait for the animation thread to finish
+        # Extract transcript IDs from the modification sites
+        st.write("🔍 Extracting transcript data from GTF database...")
+        transcript_ids_to_keep = set(modification_sites["transcript_id"])
+        
+        # Filter features from the GTF database to include only relevant transcript IDs
+        transcript_data = []
+        filtered_features = []
+        for feature in db.all_features():
+            if "transcript_id" in feature.attributes:
+                transcript_id = feature.attributes["transcript_id"][0].split(".")[0]
+                if transcript_id in transcript_ids_to_keep:
+                    filtered_features.append(feature)  # Keep only relevant features
+                    if feature.featuretype == "transcript":
+                        transcript_data.append({
+                            "transcript_id": feature.id.split(".")[0],
+                            "gene_name": feature.attributes.get("gene_name", [None])[0],
+                            "transcript_type": feature.attributes.get("transcript_type", [None])[0],
+                        })
+        
+        # Turn the transcrip data to DataFrame and drop dupilcated data
+        transcript_data = pd.DataFrame(transcript_data).drop_duplicates("transcript_id")
 
-    stop_event.clear()  # Reset the stop event
-    progress_thread = threading.Thread(target=rolling_progress, args=("Extracting transcrpt data from GTF database... ", stop_event))
-    progress_thread.start()
+        
+        # Group filtered features by transcript_id
+        st.write("🧬 Computing transcript features...")
+        grouped_features = defaultdict(list)
+        for feature in filtered_features:
+            transcript_id = feature.attributes["transcript_id"][0].split(".")[0]  # Remove version
+            grouped_features[transcript_id].append(feature)
 
-    # Extract transcript IDs from the modification sites
-    transcript_ids_to_keep = set(modification_sites["transcript_id"])
-    
-    # Filter features from the GTF database to include only relevant transcript IDs
-    transcript_data = []
-    filtered_features = []
-    for feature in db.all_features():
-        if "transcript_id" in feature.attributes:
-            transcript_id = feature.attributes["transcript_id"][0].split(".")[0]
-            if transcript_id in transcript_ids_to_keep:
-                filtered_features.append(feature)  # Keep only relevant features
-                if feature.featuretype == "transcript":
-                    transcript_data.append({
-                        "transcript_id": feature.id.split(".")[0],
-                        "gene_name": feature.attributes.get("gene_name", [None])[0],
-                        "transcript_type": feature.attributes.get("transcript_type", [None])[0],
-                    })
-    
-    # Turn the transcrip data to DataFrame and drop dupilcated data
-    transcript_data = pd.DataFrame(transcript_data).drop_duplicates("transcript_id")
+        # Get the transcripts features
+        tx_features, exons = calculate_transcript_features(grouped_features, transcript_data)
+        
+        # Apply the convert_to_genome_coordinates function to each row of the modification_sites
+        st.write("📍 Mapping transcript coordinates to genome...")
 
-    
-    # Group filtered features by transcript_id
-    grouped_features = defaultdict(list)
-    for feature in filtered_features:
-        transcript_id = feature.attributes["transcript_id"][0].split(".")[0]  # Remove version
-        grouped_features[transcript_id].append(feature)
+        modification_sites["annotation"] = modification_sites.apply(
+            lambda row: convert_to_genome_coordinates(row["transcript_id"], row["transcript_position"], exons, tx_features), axis=1
+        )
+        # Expand dictionary columns
+        annotation_df = modification_sites["annotation"].apply(pd.Series)
+        modification_sites = pd.concat([modification_sites, annotation_df], axis=1).drop(columns=["annotation"])
 
-    stop_event.set()  # Stop animation when task is done
-    progress_thread.join()  # Ensure animation thread stops
+        # Merge with transcript biotype information
+        annotated_modification_sites = modification_sites.merge(transcript_data, on="transcript_id", how="left")
+        
+        # Sort the annotated result according to the transcript ids
+        annotated_modification_sites = annotated_modification_sites.sort_values(by='transcript_id')
 
-    # Get the transcripts features
-    stop_event.clear()  # Reset stop event
-    progress_thread = threading.Thread(target=rolling_progress, args=("Calculating transcript features... ", stop_event))
-    progress_thread.start()
+        # Save output
+        st.write("💾 Saving annotated results...")
 
-    tx_features, exons = calculate_transcript_features(grouped_features, transcript_data)
-    
-    stop_event.set()  # Stop animation
-    progress_thread.join()
+        output_file = f"{output_prefix}_{input_file.split('/')[-1]}"
+        annotated_modification_sites.to_csv(output_file, index=False)
 
-    # Apply the convert_to_genome_coordinates function to each row of the modification_sites
-    stop_event.clear()
-    progress_thread = threading.Thread(target=rolling_progress, args=("Mapping transcript to genome locations... ", stop_event))
-    progress_thread.start()
-
-    modification_sites["annotation"] = modification_sites.apply(
-        lambda row: convert_to_genome_coordinates(row["transcript_id"], row["transcript_position"], exons, tx_features), axis=1
-    )
-    # Expand dictionary columns
-    annotation_df = modification_sites["annotation"].apply(pd.Series)
-    modification_sites = pd.concat([modification_sites, annotation_df], axis=1).drop(columns=["annotation"])
-
-    # Merge with transcript biotype information
-    annotated_modification_sites = modification_sites.merge(transcript_data, on="transcript_id", how="left")
-    
-    # Sort the annotated result according to the transcript ids
-    annotated_modification_sites = annotated_modification_sites.sort_values(by='transcript_id')
-
-    stop_event.set()  # Stop animation
-    progress_thread.join()
-
-    # Save output
-    stop_event.clear()
-    progress_thread = threading.Thread(target=rolling_progress, args=("Writing output file... ", stop_event))
-    progress_thread.start()
-
-    output_file = f"{output_prefix}_{input_file.split('/')[-1]}"
-    annotated_modification_sites.to_csv(output_file, index=False)
-
-    stop_event.set()  # Stop animation
-    progress_thread.join()
-
-    print(f"Annotated modification sites saved to {output_file}! :D")
+        st.write(f"✅ Annotation completed! File saved as `{output_file}`:D")
+        status.update(label="✅ Annotation successful", state="complete")
 
 def calculate_transcript_features(grouped_features, transcript_data):
     '''
@@ -303,6 +257,45 @@ def convert_to_genome_coordinates(tx_name, tx_pos, exonsdb, txfdb):
         "region": region
     }
 
+def run_m6anet(eventalign_path, output_dir, n_processes=4, num_iterations=1000):
+
+    try:
+        import m6anet
+    except ImportError:
+        raise ImportError("m6anet is not installed. Please install it with `conda install m6anet` or `pip install m6anet`")
+    
+    # Step 1: Dataprep
+    dataprep_command = [
+        "m6anet", "dataprep",
+        "--eventalign", eventalign_path,
+        "--out_dir", output_dir,
+        "--n_processes", str(n_processes)
+    ]
+
+    print("Running m6anet dataprep...")
+    result = subprocess.run(dataprep_command, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError("m6anet dataprep failed.")
+    else:
+        print("m6anet dataprep finished.")
+
+    # Step 2: Inference
+    inference_command = [
+        "m6anet", "inference",
+        "--input_dir", output_dir,
+        "--out_dir", output_dir,
+        "--n_processes", str(n_processes),
+        "--num_iterations", str(num_iterations)
+    ]
+
+    print("Running m6anet inference...")
+    result = subprocess.run(inference_command, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError("m6anet inference failed.")
+    else:
+        print("m6anet inference finished.")
+        print(f"Output files save to {output_dir}/.")
+
 def load_m6add_data(datatype):
     """
     Load and preprocess m6ADD dataset files.
@@ -332,3 +325,222 @@ def fuzzy_merge(m6anet_df, m6add_df, window=3):
             combined.update({f"m6add_{col}": match_row[col] for col in m6add_df.columns})
             matches.append(combined)
     return pd.DataFrame(matches)
+
+def fetch_gene_annotations(gene_symbols):
+    """
+    Fetch pathway and disease names for human genes using KEGG.
+
+    Args:
+        gene_symbols (list): List of gene symbols.
+
+    Returns:
+        dict: gene -> {pathways: [name_str], diseases: [name_str]}
+    """
+    gene_info = {}
+
+    for gene in gene_symbols:
+        gene_data = {"pathways": [], "diseases": []}
+        try:
+            # KEGG: Find human-specific gene entry
+            url = f"http://rest.kegg.jp/find/genes/{gene}"
+            response = requests.get(url)
+
+            if response.ok and response.text.strip():
+                lines = response.text.strip().split('\n')
+                kegg_id = None
+                for line in lines:
+                    parts = line.strip().split('\t')
+                    if len(parts) >= 1 and parts[0].startswith("hsa:"):
+                        kegg_id = parts[0]  # Ensure it's a human KEGG ID
+                        break
+
+                # Skip non-human genes
+                if not kegg_id:
+                    print(f"⚠️ Skipping non-human gene: {gene}")
+                    gene_info[gene] = gene_data
+                    continue
+
+                # Fetch pathway names
+                pathway_resp = requests.get(f"http://rest.kegg.jp/link/pathway/{kegg_id}")
+                if pathway_resp.ok:
+                    pathway_ids = [
+                        line.split('\t')[1]
+                        for line in pathway_resp.text.strip().split('\n') if '\t' in line
+                    ]
+                    pathway_names = []
+                    for pid in pathway_ids:
+                        name_resp = requests.get(f"http://rest.kegg.jp/list/{pid}")
+                        if name_resp.ok:
+                            name_line = name_resp.text.strip().split('\t')
+                            if len(name_line) > 1:
+                                pathway_names.append(name_line[1])
+                    gene_data["pathways"] = pathway_names
+
+                # Fetch disease names
+                disease_resp = requests.get(f"http://rest.kegg.jp/link/disease/{kegg_id}")
+                if disease_resp.ok:
+                    disease_ids = [
+                        line.split('\t')[1]
+                        for line in disease_resp.text.strip().split('\n') if '\t' in line
+                    ]
+                    disease_names = []
+                    for did in disease_ids:
+                        name_resp = requests.get(f"http://rest.kegg.jp/list/{did}")
+                        if name_resp.ok:
+                            name_line = name_resp.text.strip().split('\t')
+                            if len(name_line) > 1:
+                                disease_names.append(name_line[1])
+                    gene_data["diseases"] = disease_names
+
+            else:
+                print(f"⚠️ No KEGG entry found for {gene}")
+        except Exception as e:
+            print(f"⚠️ Error fetching info for {gene}: {e}")
+
+        gene_info[gene] = gene_data
+
+    return gene_info
+
+
+def build_interaction_graph(original_genes):
+    """
+    Build a NetworkX graph of gene-gene interactions from KEGG.
+
+    Args:
+        original_genes (list): List of original gene symbols.
+
+    Returns:
+        tuple: (graph, interaction_sources)
+            - graph: networkx.Graph with only gene nodes
+            - interaction_sources: dict of edge -> relationship label
+    """
+    G = nx.Graph()
+    interaction_sources = {}
+
+    for gene in original_genes:
+        G.add_node(gene, type="query_gene")
+
+        try:
+            url = f"http://rest.kegg.jp/link/genes/{gene}"
+            resp = requests.get(url)
+            if resp.ok:
+                lines = resp.text.strip().split('\n')
+                for line in lines:
+                    parts = line.strip().split('\t')
+                    if len(parts) == 2:
+                        interactor = parts[1].split(":")[1]
+                        if interactor != gene:
+                            if not G.has_node(interactor):
+                                G.add_node(interactor, type="interactor_gene")
+                            G.add_edge(gene, interactor)
+                            interaction_sources[(gene, interactor)] = "KEGG interaction"
+        except Exception as e:
+            print(f"⚠️ Failed to fetch interactions for {gene}: {e}")
+
+    return G, interaction_sources
+
+def get_go_annotations(gene_symbols):
+    """
+    Get GO term metadata for a list of gene symbols by using UniProt + QuickGO APIs.
+
+    Args:
+        gene_symbols (list): List of gene symbols (e.g., TP53, ACTB).
+
+    Returns:
+        dict: gene_symbol -> list of GO term dicts: {
+            "id": GO ID,
+            "name": term name,
+            "aspect": BP/MF/CC,
+            "definition": string
+        }
+    """
+    import time
+
+    gene_go = {}
+    headers = {"Accept": "application/json"}
+
+    def fetch_go_term_detail(go_id):
+        """Fetch GO term name, aspect, and definition from QuickGO term API."""
+        url = f"https://www.ebi.ac.uk/QuickGO/services/ontology/go/terms/{go_id}"
+        try:
+            resp = requests.get(url, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()["results"][0]
+            return {
+                "id": go_id,
+                "name": data.get("name", ""),
+                "aspect": data.get("aspect", ""),
+                "definition": data.get("definition", {}).get("text", "")
+            }
+        except Exception as e:
+            print(f"⚠️ Failed to fetch GO term detail for {go_id}: {e}")
+            return {
+                "id": go_id,
+                "name": "",
+                "aspect": "",
+                "definition": ""
+            }
+
+    for gene in gene_symbols:
+        try:
+            # Step 1: Get UniProt ID
+            uniprot_url = f"https://rest.uniprot.org/uniprotkb/search?query=gene_exact:{gene}+AND+organism_id:9606&fields=accession&format=json"
+            response = requests.get(uniprot_url, headers=headers)
+            response.raise_for_status()
+            results = response.json().get("results", [])
+
+            if not results:
+                print(f"⚠️ No UniProt ID found for gene: {gene}")
+                gene_go[gene] = []
+                continue
+
+            uniprot_id = results[0]["primaryAccession"]
+
+            # Step 2: Get GO annotations for UniProt ID
+            quickgo_url = f"https://www.ebi.ac.uk/QuickGO/services/annotation/search"
+            params = {
+                "geneProductId": f"UniProtKB:{uniprot_id}",
+                "limit": 100
+            }
+
+            go_response = requests.get(quickgo_url, headers=headers, params=params)
+            go_response.raise_for_status()
+            go_results = go_response.json().get("results", [])
+
+            go_ids = list(set([entry["goId"] for entry in go_results if "goId" in entry]))
+            go_terms = []
+
+            for go_id in go_ids:
+                go_term = fetch_go_term_detail(go_id)
+                go_terms.append(go_term)
+                time.sleep(0.1)  # Avoid overloading API
+
+            gene_go[gene] = go_terms
+        except Exception as e:
+            print(f":( Error fetching GO terms for {gene}: {e}")
+            gene_go[gene] = []
+
+    return gene_go
+
+
+def summarize_go_terms(go_dict):
+    """
+    Count GO term frequencies from a gene-to-GO mapping.
+
+    Args:
+        go_dict (dict): gene -> list of GO term dicts.
+
+    Returns:
+        DataFrame: GO term frequencies with name and aspect.
+    """
+    from collections import Counter
+
+    all_terms = []
+    for terms in go_dict.values():
+        for t in terms:
+            term_label = f"{t['name']} ({t['aspect']})" if t['name'] else t['id']
+            all_terms.append(term_label)
+
+    counter = Counter(all_terms)
+    df = pd.DataFrame(counter.items(), columns=["GO_term", "Count"])
+    return df.sort_values(by="Count", ascending=False)
