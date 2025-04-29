@@ -9,7 +9,10 @@ import glob
 import subprocess
 import streamlit as st
 import requests
-import networkx as nx
+from pyvis.network import Network
+import math
+import tempfile
+from bs4 import BeautifulSoup
 
 
 
@@ -326,118 +329,82 @@ def fuzzy_merge(m6anet_df, m6add_df, window=3):
             matches.append(combined)
     return pd.DataFrame(matches)
 
-def fetch_gene_annotations(gene_symbols):
-    """
-    Fetch pathway and disease names for human genes using KEGG.
+def fetch_kegg_gene_list(organism="hsa"):
+    url = f"https://rest.kegg.jp/list/{organism}"
+    response = requests.get(url)
+    symbol_to_kegg = {}
+    kegg_to_symbol = {}
+    if response.status_code == 200:
+        for line in response.text.strip().split("\n"):
+            parts = line.split("\t")
+            if len(parts) >= 4:
+                kegg_id = parts[0].split(":")[1]
+                gene_info = parts[3]
+                gene_symbol = gene_info.split(",")[0].strip()
+                symbol_to_kegg[gene_symbol.upper()] = kegg_id
+                kegg_to_symbol[kegg_id] = gene_symbol.upper()
+    return symbol_to_kegg, kegg_to_symbol
 
-    Args:
-        gene_symbols (list): List of gene symbols.
+def symbol_to_keggid(symbols, symbol_to_kegg):
+    ids = []
+    for sym in symbols:
+        sym = sym.upper()
+        if sym in symbol_to_kegg:
+            ids.append(symbol_to_kegg[sym])
+    return ids
 
-    Returns:
-        dict: gene -> {pathways: [name_str], diseases: [name_str]}
-    """
-    gene_info = {}
+def get_ko_ids(kegg_ids, organism="hsa"):
+    ko_map = {}
+    for kid in kegg_ids:
+        url = f"http://rest.kegg.jp/link/ko/{organism}:{kid}"
+        res = requests.get(url)
+        if res.ok and res.text:
+            lines = res.text.strip().split("\n")
+            if lines:
+                parts = lines[0].split("\t")
+                if len(parts) == 2 and parts[1].startswith("ko:"):
+                    ko_map[kid] = parts[1]
+    return ko_map
 
-    for gene in gene_symbols:
-        gene_data = {"pathways": [], "diseases": []}
-        try:
-            # KEGG: Find human-specific gene entry
-            url = f"http://rest.kegg.jp/find/genes/{gene}"
-            response = requests.get(url)
+def get_pathways_from_ko(ko_map):
+    pathway_map = {}
+    for kid, ko_id in ko_map.items():
+        url = f"http://rest.kegg.jp/link/pathway/{ko_id}"
+        res = requests.get(url)
+        if res.ok and res.text:
+            pathways = []
+            for line in res.text.strip().split("\n"):
+                parts = line.strip().split("\t")
+                if len(parts) == 2 and parts[1].startswith("path:map"):
+                    pathway_id = parts[1].split(":")[1]
+                    pathways.append(pathway_id)
+            pathway_map[kid] = pathways
+    return pathway_map
 
-            if response.ok and response.text.strip():
-                lines = response.text.strip().split('\n')
-                kegg_id = None
-                for line in lines:
-                    parts = line.strip().split('\t')
-                    if len(parts) >= 1 and parts[0].startswith("hsa:"):
-                        kegg_id = parts[0]  # Ensure it's a human KEGG ID
-                        break
+def get_common_pathways(pathway_map):
+    all_pathways = list(pathway_map.values())
+    if not all_pathways:
+        return []
+    common = set(all_pathways[0])
+    for p in all_pathways[1:]:
+        common &= set(p)
+    return list(common)
 
-                # Skip non-human genes
-                if not kegg_id:
-                    print(f"⚠️ Skipping non-human gene: {gene}")
-                    gene_info[gene] = gene_data
-                    continue
+def get_kegg_pathway_image_url(pathway_id, ko_map):
+    if not ko_map:
+        return None, None
 
-                # Fetch pathway names
-                pathway_resp = requests.get(f"http://rest.kegg.jp/link/pathway/{kegg_id}")
-                if pathway_resp.ok:
-                    pathway_ids = [
-                        line.split('\t')[1]
-                        for line in pathway_resp.text.strip().split('\n') if '\t' in line
-                    ]
-                    pathway_names = []
-                    for pid in pathway_ids:
-                        name_resp = requests.get(f"http://rest.kegg.jp/list/{pid}")
-                        if name_resp.ok:
-                            name_line = name_resp.text.strip().split('\t')
-                            if len(name_line) > 1:
-                                pathway_names.append(name_line[1])
-                    gene_data["pathways"] = pathway_names
-
-                # Fetch disease names
-                disease_resp = requests.get(f"http://rest.kegg.jp/link/disease/{kegg_id}")
-                if disease_resp.ok:
-                    disease_ids = [
-                        line.split('\t')[1]
-                        for line in disease_resp.text.strip().split('\n') if '\t' in line
-                    ]
-                    disease_names = []
-                    for did in disease_ids:
-                        name_resp = requests.get(f"http://rest.kegg.jp/list/{did}")
-                        if name_resp.ok:
-                            name_line = name_resp.text.strip().split('\t')
-                            if len(name_line) > 1:
-                                disease_names.append(name_line[1])
-                    gene_data["diseases"] = disease_names
-
-            else:
-                print(f"⚠️ No KEGG entry found for {gene}")
-        except Exception as e:
-            print(f"⚠️ Error fetching info for {gene}: {e}")
-
-        gene_info[gene] = gene_data
-
-    return gene_info
-
-
-def build_interaction_graph(original_genes):
-    """
-    Build a NetworkX graph of gene-gene interactions from KEGG.
-
-    Args:
-        original_genes (list): List of original gene symbols.
-
-    Returns:
-        tuple: (graph, interaction_sources)
-            - graph: networkx.Graph with only gene nodes
-            - interaction_sources: dict of edge -> relationship label
-    """
-    G = nx.Graph()
-    interaction_sources = {}
-
-    for gene in original_genes:
-        G.add_node(gene, type="query_gene")
-
-        try:
-            url = f"http://rest.kegg.jp/link/genes/{gene}"
-            resp = requests.get(url)
-            if resp.ok:
-                lines = resp.text.strip().split('\n')
-                for line in lines:
-                    parts = line.strip().split('\t')
-                    if len(parts) == 2:
-                        interactor = parts[1].split(":")[1]
-                        if interactor != gene:
-                            if not G.has_node(interactor):
-                                G.add_node(interactor, type="interactor_gene")
-                            G.add_edge(gene, interactor)
-                            interaction_sources[(gene, interactor)] = "KEGG interaction"
-        except Exception as e:
-            print(f"⚠️ Failed to fetch interactions for {gene}: {e}")
-
-    return G, interaction_sources
+    ko_list = "+".join([ko.split(":")[1] for ko in ko_map.values()])
+    url = f"https://www.kegg.jp/kegg-bin/show_pathway?{pathway_id}/{ko_list}%09red"
+    res = requests.get(url)
+    if res.ok:
+        soup = BeautifulSoup(res.text, "html.parser")
+        img_tag = soup.find("img")
+        if img_tag and "src" in img_tag.attrs:
+            img_src = img_tag["src"]
+            full_img_url = "https://www.kegg.jp" + img_src
+            return full_img_url, url
+    return None, url
 
 def get_go_annotations(gene_symbols):
     """
@@ -544,3 +511,67 @@ def summarize_go_terms(go_dict):
     counter = Counter(all_terms)
     df = pd.DataFrame(counter.items(), columns=["GO_term", "Count"])
     return df.sort_values(by="Count", ascending=False)
+
+def fetch_expanded_network(gene_list, species=9606, required_score=400, add_nodes=10):
+    url = "https://string-db.org/api/json/network"
+    params = {
+        "identifiers": "%0d".join(gene_list),
+        "species": species,
+        "required_score": required_score,
+        "add_nodes": add_nodes,
+        "caller_identity": "m6amap_app"
+    }
+    response = requests.get(url, params=params)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        return []
+
+def get_ppi_enrichment(gene_list, species=9606):
+    url = "https://string-db.org/api/json/enrichment"
+    params = {
+        "identifiers": "%0d".join(gene_list),
+        "species": species
+    }
+    response = requests.get(url, params=params)
+    if response.status_code == 200:
+        enrichment = response.json()
+        return next((e for e in enrichment if e['category'] == 'PPI enrichment'), None)
+    return None
+
+def generate_string_url(gene_list, species=9606):
+    return f"https://string-db.org/cgi/network?species={species}&identifiers={'%0D'.join(gene_list)}"
+
+def build_string_network(interactions, highlight_genes):
+    net = Network(height="600px", width="100%", bgcolor="#111", font_color="white")
+    net.repulsion(node_distance=150)
+
+    seen_nodes = set()
+
+    for entry in interactions:
+        source = entry["preferredName_A"]
+        target = entry["preferredName_B"]
+        score = entry["score"]
+
+        for gene in [source, target]:
+            if gene not in seen_nodes:
+                net.add_node(
+                    gene,
+                    label=gene,
+                    color="#90ee90" if gene in highlight_genes else "#add8e6"
+                )
+                seen_nodes.add(gene)
+
+        thickness = max(1, min(8, int(math.log(score + 1, 1.5)) - 5))
+
+        net.add_edge(
+            source,
+            target,
+            value=thickness,
+            color='white',
+            title=f"Confidence score: {score:.0f}"
+        )
+
+    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".html")
+    net.write_html(tmp_file.name)
+    return tmp_file.name

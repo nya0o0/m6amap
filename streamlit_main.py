@@ -2,9 +2,10 @@ import streamlit as st
 import pandas as pd
 from pyvis.network import Network
 import tempfile
+import math
 import streamlit.components.v1 as components
 import altair as alt
-from src.module import process_files, load_m6add_data, fuzzy_merge, run_m6anet, fetch_gene_annotations, build_interaction_graph, get_go_annotations, summarize_go_terms
+from src.module import process_files, load_m6add_data, fuzzy_merge, run_m6anet,  get_go_annotations, summarize_go_terms, fetch_expanded_network, get_ppi_enrichment, generate_string_url, build_string_network, fetch_kegg_gene_list, symbol_to_keggid, get_ko_ids, get_pathways_from_ko, get_common_pathways, get_kegg_pathway_image_url
 
 st.set_page_config(page_title="m6amap", layout="wide")
 st.title("m6amap :D")
@@ -60,60 +61,100 @@ if st.sidebar.button("Run Matching"):
     except Exception as e:
         st.error(f":( Matching failed: {e}")
 
-st.sidebar.header("4. Gene Interaction Graph")
+st.sidebar.header("4. STRING Interaction Network")
+min_score = st.sidebar.slider("STRING required score", 400, 900, 700, step=100)
+extra_nodes = st.sidebar.slider("Extra interactors", 0, 50, 10, step=5)
+run_string = st.sidebar.button("Run STRING Network")
 
-if st.sidebar.button("Build Enhanced Network Graph"):
+if run_string:
     try:
-        # Load annotated file
         df = pd.read_csv(f"{output_prefix}_{input_file.split('/')[-1]}")
-        original_genes = df["gene_name"].dropna().unique().tolist()[:50]  # Limit for performance
+        gene_list = df["gene_name"].dropna().unique().tolist()[:100]  # limit for performance
 
-        st.write("🔍 Fetching gene annotations from KEGG...")
-        gene_info = fetch_gene_annotations(original_genes)
+        if len(gene_list) < 2:
+            st.error("Please provide at least two genes from annotation.")
+        else:
+            with st.spinner("🔄 Fetching STRING interactions..."):
+                interactions = fetch_expanded_network(gene_list, required_score=min_score, add_nodes=extra_nodes)
 
-        st.write("🔗 Building gene-gene interaction graph...")
-        G, interaction_sources = build_interaction_graph(original_genes)
+            if not interactions:
+                st.warning("No STRING interactions found. Try lowering the threshold or checking gene names.")
+            else:
+                st.success(f":D STRING Network fetched with {len(interactions)} interactions.")
+                html_path = build_string_network(interactions, highlight_genes=set(gene_list))
 
-        net = Network(height="600px", width="100%", bgcolor="#ffffff", font_color="black", notebook=False)
-        net.barnes_hut()
+                st.subheader("🌐 STRING Interaction Network")
+                with open(html_path, "r", encoding="utf-8") as f:
+                    html = f.read()
+                    components.html(html, height=600, scrolling=True)
 
-        node_colors = {
-            "query_gene": "skyblue",
-            "interactor_gene": "orange"
-        }
+                with st.expander("📊 PPI Enrichment"):
+                    enrichment = get_ppi_enrichment(gene_list)
+                    if enrichment:
+                        st.success(f"PPI Enrichment p-value: {enrichment['p_value']:.2e}")
+                        st.write(f"**Observed edges**: {enrichment['number_of_edges']}")
+                        st.write(f"**Expected edges**: {enrichment['expected_number_of_edges']:.2f}")
+                        st.write(f"**Enrichment score**: {enrichment['enrichment']:.2f}")
+                    else:
+                        st.warning("No enrichment result found.")
 
-        # Add gene nodes with annotations
-        for node in G.nodes():
-            node_type = G.nodes[node].get("type", "unknown")
-            color = node_colors.get(node_type, "gray")
-
-            # Get annotation info for tooltip
-            info = gene_info.get(node, {})
-            pathways = info.get("pathways", [])
-            diseases = info.get("diseases", [])
-
-            tooltip = f"<b>{node}</b><br><br>"
-            tooltip += f"<b>Pathways:</b><br>{'<br>'.join(pathways) if pathways else 'None'}<br><br>"
-            tooltip += f"<b>Diseases:</b><br>{'<br>'.join(diseases) if diseases else 'None'}"
-
-            net.add_node(node, label=node, color=color, title=tooltip)
-
-        # Add edges with descriptions
-        for source, target in G.edges():
-            title = interaction_sources.get((source, target), "Interaction")
-            net.add_edge(source, target, title=title)
-
-        # Save and render the network graph
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as tmp_file:
-            net.save_graph(tmp_file.name)
-            components.html(open(tmp_file.name, "r", encoding="utf-8").read(), height=600)
-
-        st.success(":D Interactive gene interaction network generated.")
-
+                st.markdown("---")
+                st.markdown("🔗 [View full network on STRING.org](%s)" % generate_string_url(gene_list), unsafe_allow_html=True)
     except Exception as e:
-        st.error(f":() Graph generation failed: {e}")
+        st.error(f":( STRING network failed: {e}")
 
-st.sidebar.header("5. GO Term Enrichment")
+st.sidebar.header("5. KEGG Pathway Viewer")
+organism_code = st.sidebar.text_input("KEGG Organism Code", value="hsa")
+run_kegg_pathway = st.sidebar.button("Analyze Pathways")
+
+if run_kegg_pathway:
+    try:
+        df = pd.read_csv(f"{output_prefix}_{input_file.split('/')[-1]}")
+        gene_list = df["gene_name"].dropna().unique().tolist()[:100]
+
+        st.info("🔍 Fetching KEGG gene list...")
+        symbol_to_kegg, kegg_to_symbol = fetch_kegg_gene_list(organism_code)
+
+        kegg_ids = symbol_to_keggid(gene_list, symbol_to_kegg)
+        if not kegg_ids:
+            st.error(":( No valid KEGG gene IDs found.")
+        else:
+            st.success(":D Mapped gene symbols to KEGG IDs.")
+            st.json({sym: symbol_to_kegg.get(sym.upper()) for sym in gene_list if sym.upper() in symbol_to_kegg})
+
+            ko_map = get_ko_ids(kegg_ids, organism=organism_code)
+            if not ko_map:
+                st.error(":( No KO (Orthology IDs) found.")
+            else:
+                pathway_map = get_pathways_from_ko(ko_map)
+                st.subheader("📊 Pathways associated with KO terms:")
+                st.json(pathway_map)
+
+                common_pathways = get_common_pathways(pathway_map)
+                all_pathways = sorted({p for plist in pathway_map.values() for p in plist})
+                pathways_to_display = common_pathways if common_pathways else all_pathways
+
+                if not pathways_to_display:
+                    st.warning("XP No pathways found.")
+                else:
+                    st.success(f"✅ Found {len(pathways_to_display)} pathway(s).")
+                    selected_pathway = st.selectbox("Select a pathway to view:", pathways_to_display)
+
+                    if selected_pathway:
+                        st.subheader(f"🧪 Pathway: {selected_pathway}")
+                        img_url, viewer_url = get_kegg_pathway_image_url(selected_pathway, ko_map)
+
+                        if img_url:
+                            st.image(img_url, caption=f"{selected_pathway} (highlighted)", use_container_width=True)
+                        else:
+                            st.error(":( Could not retrieve image.")
+
+                        st.markdown(f"[🔗 Open in KEGG Viewer]({viewer_url})", unsafe_allow_html=True)
+    except Exception as e:
+        st.error(f"KEGG pathway analysis failed: {e}")
+
+
+st.sidebar.header("6. GO Term Enrichment")
 
 if st.sidebar.button("Show GO Term Summary"):
     try:
@@ -164,3 +205,6 @@ if st.sidebar.button("Show GO Term Summary"):
 
     except Exception as e:
         st.error(f":() GO term annotation failed: {e}")
+
+
+
