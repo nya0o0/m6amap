@@ -5,9 +5,7 @@ from pyvis.network import Network
 import tempfile
 import os
 
-# ------------------------------
 # STRING API: Fetch expanded subnetwork
-# ------------------------------
 def fetch_expanded_network(gene_list, species=9606, required_score=400, add_nodes=10):
     url = "https://string-db.org/api/json/network"
     params = {
@@ -23,9 +21,7 @@ def fetch_expanded_network(gene_list, species=9606, required_score=400, add_node
     else:
         return []
 
-# ------------------------------
 # STRING API: PPI Enrichment
-# ------------------------------
 def get_ppi_enrichment(gene_list, species=9606):
     url = "https://string-db.org/api/json/enrichment"
     params = {
@@ -38,15 +34,13 @@ def get_ppi_enrichment(gene_list, species=9606):
         return next((e for e in enrichment if e['category'] == 'PPI enrichment'), None)
     return None
 
-# ------------------------------
 # Generate STRING.org link
-# ------------------------------
 def generate_string_url(gene_list, species=9606):
     return f"https://string-db.org/cgi/network?species={species}&identifiers={'%0D'.join(gene_list)}"
 
-# ------------------------------
+
 # Build and Save Network HTML
-# ------------------------------
+
 def build_network(interactions, highlight_genes):
     net = Network(height="600px", width="100%", bgcolor="#111", font_color="white")
     net.repulsion(node_distance=150)

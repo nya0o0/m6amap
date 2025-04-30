@@ -77,17 +77,32 @@ def get_common_pathways(pathway_map):
     return list(common)
 
 def get_kegg_pathway_image_url(pathway_id, ko_map):
+    """
+    Fetch the KEGG pathway image using the KEGG REST API.
+
+    Args:
+        pathway_id (str): The pathway ID (e.g., "map00010").
+        ko_map (dict): A dictionary mapping KEGG gene IDs to KO IDs.
+
+    Returns:
+        tuple: (image_url, viewer_url)
+    """
     if not ko_map:
         return None, None
 
+    # Create the KO list for highlighting
     ko_list = "+".join([ko.split(":")[1] for ko in ko_map.values()])
-    url = f"https://www.kegg.jp/kegg-bin/show_pathway?{pathway_id}/{ko_list}%09red"
-    res = requests.get(url)
-    if res.ok:
-        soup = BeautifulSoup(res.text, "html.parser")
-        img_tag = soup.find("img")
-        if img_tag and "src" in img_tag.attrs:
-            img_src = img_tag["src"]
-            full_img_url = "https://www.kegg.jp" + img_src
-            return full_img_url, url
-    return None, url
+    viewer_url = f"https://www.kegg.jp/kegg-bin/show_pathway?{pathway_id}/{ko_list}%09red"
+
+    # API to directly fetch the image
+    api_url = f"https://rest.kegg.jp/get/{pathway_id}/image"
+    response = requests.get(api_url, stream=True)
+
+    if response.ok:
+        # Save the image temporarily
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+        with open(temp_file.name, "wb") as f:
+            f.write(response.content)
+        return temp_file.name, viewer_url
+    else:
+        return None, viewer_url

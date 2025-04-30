@@ -130,11 +130,9 @@ if "kegg_results" not in st.session_state:
 # Run the analysis and store results in session state
 if run_kegg_pathway:
     try:
-        if use_custom_genes and custom_input:
-            gene_list = custom_input[:100]
-        else:
-            df = pd.read_csv(f"{output_prefix}_{input_file.split('/')[-1]}")
-            gene_list = df["gene_name"].dropna().unique().tolist()[:100]
+        # Load genes
+        df = pd.read_csv(f"{output_prefix}_{input_file.split('/')[-1]}")
+        gene_list = df["gene_name"].dropna().unique().tolist()[:100]
 
         st.info("🔍 Fetching KEGG gene list...")
         symbol_to_kegg, kegg_to_symbol = fetch_kegg_gene_list(organism_code)
@@ -179,11 +177,11 @@ if st.session_state.kegg_results:
 
     if selected_pathway:
         st.subheader(f"🧪 Pathway: {selected_pathway}")
-        img_url, viewer_url = get_kegg_pathway_image_url(selected_pathway, results["ko_map"])
+        img_path, viewer_url = get_kegg_pathway_image_url(selected_pathway, results["ko_map"])
 
-        if img_url:
+        if img_path:
             try:
-                st.image(img_url, caption=f"{selected_pathway} (highlighted)", use_container_width=True)
+                st.image(img_path, caption=f"{selected_pathway} (highlighted)", use_container_width=True)
             except Exception as e:
                 st.error(f"Image failed to load: {e}")
         else:
