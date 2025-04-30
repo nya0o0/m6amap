@@ -5,7 +5,11 @@ import tempfile
 import math
 import streamlit.components.v1 as components
 import altair as alt
-from src.module import process_files, load_m6add_data, fuzzy_merge, run_m6anet,  get_go_annotations, summarize_go_terms, fetch_expanded_network, get_ppi_enrichment, generate_string_url, build_string_network, fetch_kegg_gene_list, symbol_to_keggid, get_ko_ids, get_pathways_from_ko, get_common_pathways, get_kegg_pathway_image_url
+from src.module_annotation import process_files, run_m6anet
+from src.module_match import load_m6add_data, fuzzy_merge
+from src.module_interaction import fetch_expanded_network, get_ppi_enrichment, generate_string_url, build_string_network
+from src.module_kegg import fetch_kegg_gene_list, symbol_to_keggid, get_ko_ids, get_pathways_from_ko, get_common_pathways, get_kegg_pathway_image_url
+from src.module_go import get_go_annotations, summarize_go_terms
 
 st.set_page_config(page_title="m6amap", layout="wide")
 st.title("m6amap :D")
@@ -61,6 +65,16 @@ if st.sidebar.button("Run Matching"):
     except Exception as e:
         st.error(f":( Matching failed: {e}")
 
+# Shared input: allow users to input custom gene list
+st.sidebar.markdown("### Custom Gene List (Optional)")
+use_custom_genes = st.sidebar.checkbox("Use custom input gene list")
+
+custom_input = []
+if use_custom_genes:
+    gene_input_text = st.sidebar.text_area("Enter gene symbols (comma or newline separated)", height=150)
+    if gene_input_text:
+        custom_input = [g.strip() for g in gene_input_text.replace(",", "\n").splitlines() if g.strip()]
+
 st.sidebar.header("4. STRING Interaction Network")
 min_score = st.sidebar.slider("STRING required score", 400, 900, 700, step=100)
 extra_nodes = st.sidebar.slider("Extra interactors", 0, 50, 10, step=5)
@@ -68,17 +82,20 @@ run_string = st.sidebar.button("Run STRING Network")
 
 if run_string:
     try:
-        df = pd.read_csv(f"{output_prefix}_{input_file.split('/')[-1]}")
-        gene_list = df["gene_name"].dropna().unique().tolist()[:100]  # limit for performance
+        if use_custom_genes and custom_input:
+            gene_list = custom_input[:100]
+        else:
+            df = pd.read_csv(f"{output_prefix}_{input_file.split('/')[-1]}")
+            gene_list = df["gene_name"].dropna().unique().tolist()[:100]
 
         if len(gene_list) < 2:
-            st.error("Please provide at least two genes from annotation.")
+            st.error("Please provide at least two valid gene symbols.")
         else:
             with st.spinner("🔄 Fetching STRING interactions..."):
                 interactions = fetch_expanded_network(gene_list, required_score=min_score, add_nodes=extra_nodes)
 
             if not interactions:
-                st.warning("No STRING interactions found. Try lowering the threshold or checking gene names.")
+                st.warning("No STRING interactions found.")
             else:
                 st.success(f":D STRING Network fetched with {len(interactions)} interactions.")
                 html_path = build_string_network(interactions, highlight_genes=set(gene_list))
@@ -107,10 +124,17 @@ st.sidebar.header("5. KEGG Pathway Viewer")
 organism_code = st.sidebar.text_input("KEGG Organism Code", value="hsa")
 run_kegg_pathway = st.sidebar.button("Analyze Pathways")
 
+if "kegg_results" not in st.session_state:
+    st.session_state.kegg_results = None
+
+# Run the analysis and store results in session state
 if run_kegg_pathway:
     try:
-        df = pd.read_csv(f"{output_prefix}_{input_file.split('/')[-1]}")
-        gene_list = df["gene_name"].dropna().unique().tolist()[:100]
+        if use_custom_genes and custom_input:
+            gene_list = custom_input[:100]
+        else:
+            df = pd.read_csv(f"{output_prefix}_{input_file.split('/')[-1]}")
+            gene_list = df["gene_name"].dropna().unique().tolist()[:100]
 
         st.info("🔍 Fetching KEGG gene list...")
         symbol_to_kegg, kegg_to_symbol = fetch_kegg_gene_list(organism_code)
@@ -119,47 +143,68 @@ if run_kegg_pathway:
         if not kegg_ids:
             st.error(":( No valid KEGG gene IDs found.")
         else:
-            st.success(":D Mapped gene symbols to KEGG IDs.")
-            st.json({sym: symbol_to_kegg.get(sym.upper()) for sym in gene_list if sym.upper() in symbol_to_kegg})
-
             ko_map = get_ko_ids(kegg_ids, organism=organism_code)
-            if not ko_map:
-                st.error(":( No KO (Orthology IDs) found.")
-            else:
-                pathway_map = get_pathways_from_ko(ko_map)
-                st.subheader("📊 Pathways associated with KO terms:")
-                st.json(pathway_map)
+            pathway_map = get_pathways_from_ko(ko_map)
+            common_pathways = get_common_pathways(pathway_map)
+            all_pathways = sorted({p for plist in pathway_map.values() for p in plist})
+            pathways_to_display = common_pathways if common_pathways else all_pathways
 
-                common_pathways = get_common_pathways(pathway_map)
-                all_pathways = sorted({p for plist in pathway_map.values() for p in plist})
-                pathways_to_display = common_pathways if common_pathways else all_pathways
+            # Store results in session state
+            st.session_state.kegg_results = {
+                "gene_list": gene_list,
+                "symbol_to_kegg": symbol_to_kegg,
+                "kegg_ids": kegg_ids,
+                "ko_map": ko_map,
+                "pathway_map": pathway_map,
+                "pathways_to_display": pathways_to_display
+            }
 
-                if not pathways_to_display:
-                    st.warning("XP No pathways found.")
-                else:
-                    st.success(f"✅ Found {len(pathways_to_display)} pathway(s).")
-                    selected_pathway = st.selectbox("Select a pathway to view:", pathways_to_display)
+            st.success(":D KEGG analysis complete. You can now select a pathway below.")
 
-                    if selected_pathway:
-                        st.subheader(f"🧪 Pathway: {selected_pathway}")
-                        img_url, viewer_url = get_kegg_pathway_image_url(selected_pathway, ko_map)
-
-                        if img_url:
-                            st.image(img_url, caption=f"{selected_pathway} (highlighted)", use_container_width=True)
-                        else:
-                            st.error(":( Could not retrieve image.")
-
-                        st.markdown(f"[🔗 Open in KEGG Viewer]({viewer_url})", unsafe_allow_html=True)
     except Exception as e:
         st.error(f"KEGG pathway analysis failed: {e}")
+
+# If results already exist, show pathway selector and image
+if st.session_state.kegg_results:
+    results = st.session_state.kegg_results
+
+    st.subheader("📊 Pathways associated with KO terms:")
+    pathway_rows = []
+    for gene_id, pathways in results["pathway_map"].items():
+        for pid in pathways:
+            pathway_rows.append({"KEGG Gene ID": gene_id, "Pathway ID": pid})
+    st.dataframe(pd.DataFrame(pathway_rows))
+
+    selected_pathway = st.selectbox("Select a pathway to view:", results["pathways_to_display"])
+
+    if selected_pathway:
+        st.subheader(f"🧪 Pathway: {selected_pathway}")
+        img_url, viewer_url = get_kegg_pathway_image_url(selected_pathway, results["ko_map"])
+
+        if img_url:
+            try:
+                st.image(img_url, caption=f"{selected_pathway} (highlighted)", use_container_width=True)
+            except Exception as e:
+                st.error(f"Image failed to load: {e}")
+        else:
+            st.warning("⚠️ Pathway image not available.")
+
+        st.markdown(f"[🔗 Open in KEGG Viewer]({viewer_url})", unsafe_allow_html=True)
 
 
 st.sidebar.header("6. GO Term Enrichment")
 
+if "go_results" not in st.session_state:
+    st.session_state.go_results = None
+
+# Button to run GO analysis
 if st.sidebar.button("Show GO Term Summary"):
     try:
-        df = pd.read_csv(f"{output_prefix}_{input_file.split('/')[-1]}")
-        gene_symbols = df["gene_name"].dropna().unique().tolist()[:50]  # Limit for performance
+        if use_custom_genes and custom_input:
+            gene_symbols = custom_input[:50]
+        else:
+            df = pd.read_csv(f"{output_prefix}_{input_file.split('/')[-1]}")
+            gene_symbols = df["gene_name"].dropna().unique().tolist()[:50]
 
         st.info("🔍 Fetching GO annotations ...")
         go_dict = get_go_annotations(gene_symbols)
@@ -170,41 +215,53 @@ if st.sidebar.button("Show GO Term Summary"):
         else:
             st.success(":D GO terms fetched successfully.")
 
-            # Show bar chart of top GO terms
-            top_n = st.slider("Top N GO Terms", 5, 30, 10)
-            chart = alt.Chart(go_summary.head(top_n)).mark_bar().encode(
-                x=alt.X("Count:Q"),
-                y=alt.Y("GO_term:N", sort='-x'),
-                tooltip=["GO_term", "Count"]
-            ).properties(
-                height=400,
-                title="Top GO Terms Across Annotated Genes"
-            )
-
-            st.altair_chart(chart, use_container_width=True)
-
-            # Show full GO term table
-            st.markdown("### 📋 Detailed GO Annotation Table")
-            df_terms = []
-            for gene, terms in go_dict.items():
-                for t in terms:
-                    df_terms.append({
-                        "Gene": gene,
-                        "GO ID": t["id"],
-                        "Name": t["name"],
-                        "Aspect": t["aspect"],
-                        "Definition": t["definition"]
-                    })
-
-            df_terms = pd.DataFrame(df_terms)
-            st.dataframe(df_terms)
-
-            # Optional: download button
-            csv = df_terms.to_csv(index=False).encode("utf-8")
-            st.download_button("📥 Download GO Annotations", data=csv, file_name="go_annotations.csv", mime="text/csv")
+            # Store results
+            st.session_state.go_results = {
+                "go_dict": go_dict,
+                "go_summary": go_summary
+            }
 
     except Exception as e:
         st.error(f":() GO term annotation failed: {e}")
 
+# If results exist, show chart and table
+if st.session_state.go_results:
+    go_dict = st.session_state.go_results["go_dict"]
+    go_summary = st.session_state.go_results["go_summary"]
 
+    st.subheader("📊 GO Term Enrichment Summary")
+
+    # Slider only affects chart, not the whole computation
+    top_n = st.slider("Top N GO Terms", 5, 30, 10)
+
+    # Show chart
+    chart = alt.Chart(go_summary.head(top_n)).mark_bar().encode(
+        x=alt.X("Count:Q"),
+        y=alt.Y("GO_term:N", sort='-x'),
+        tooltip=["GO_term", "Count"]
+    ).properties(
+        height=400,
+        title="Top GO Terms Across Annotated Genes"
+    )
+    st.altair_chart(chart, use_container_width=True)
+
+    # Show full GO annotation table
+    st.markdown("### 📋 Detailed GO Annotation Table")
+    df_terms = []
+    for gene, terms in go_dict.items():
+        for t in terms:
+            df_terms.append({
+                "Gene": gene,
+                "GO ID": t["id"],
+                "Name": t["name"],
+                "Aspect": t["aspect"],
+                "Definition": t["definition"]
+            })
+
+    df_terms = pd.DataFrame(df_terms)
+    st.dataframe(df_terms)
+
+    # Download
+    csv = df_terms.to_csv(index=False).encode("utf-8")
+    st.download_button("📥 Download GO Annotations", data=csv, file_name="go_annotations.csv", mime="text/csv")
 

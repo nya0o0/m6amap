@@ -36,12 +36,12 @@ def process_files(input_file, gtf_file, output_prefix):
         db_file = gtf_file + ".db"
         try: # Check whether the database already exists
             db = gffutils.FeatureDB(db_file, keep_order=True)
-            st.write("✅ GTF database loaded.")
+            st.write(":D GTF database loaded.")
         except:
             st.write("🛠️ Creating GTF database...")
             db = gffutils.create_db(gtf_file, dbfn=db_file, force=True, keep_order=True, disable_infer_genes=True, disable_infer_transcripts=True)
             db = gffutils.FeatureDB(db_file, keep_order=True)
-            st.write("✅ GTF database loaded.")
+            st.write(":D GTF database loaded.")
 
 
         # Extract transcript IDs from the modification sites
