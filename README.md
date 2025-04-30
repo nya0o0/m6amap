@@ -1,4 +1,4 @@
-# **m6amap: M6A modification ???**  
+# **m6amap: m6A Modification Annotation and Pathway Mapping**  
 
 related mini-project: https://github.com/nya0o0/m6alinker
 
@@ -115,13 +115,62 @@ There are several tools that can predict m6a modification sites and also databas
 ---
 ## **6. Dependencies** 
 
+**6.1 Python Libraries**
+
+The following Python libraries are required for the project:
+
+| Library           | Purpose                                                                                     |
+|--------------------|---------------------------------------------------------------------------------------------|
+| `pandas`          | Data manipulation and analysis                                                              |
+| `numpy`           | Numerical computations                                                                      |
+| `gffutils`        | Parsing and querying GTF files                                                              |
+| `requests`        | HTTP requests for interacting with external APIs                                            |
+| `streamlit`       | Building the interactive web application                                                    |
+| `pyvis`           | Creating interactive network visualizations                                                 |
+| `altair`          | Data visualization                                                                          |
+| `beautifulsoup4`  | Parsing and extracting information from HTML/XML (used in KEGG pathway fetching)            |
+| **`m6anet`**      | Specialized tool for m6A modification analysis, used for data preparation and inference      |
+
+-
+
+You can install all Python dependencies using the `requirements.txt` file provided in the project repository. Run the following command:
+
+```bash
+pip install -r requirements.txt
+```
+
+**Example `requirements.txt` file:**
+
+```plaintext
+pandas
+numpy
+gffutils
+requests
+streamlit
+pyvis
+altair
+beautifulsoup4
+matplotlib
+m6anet
+```
+
+
 ---
 
 ## **7. Usage** 
 
-### Installation and run
+**1. Dependencies installation**
+
+
 ```bash
 git clone https://github.com/nya0o0/project
 cd  project
+pip install -r dependencies.txt
+```
+
+
+**2. Run website**
+
+```bash
 streamlit run streamlit_main.py
 ```

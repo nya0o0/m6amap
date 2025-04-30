@@ -1,0 +1,10 @@
+pandas
+numpy
+gffutils
+requests
+streamlit
+pyvis
+altair
+beautifulsoup4
+matplotlib
+m6anet
