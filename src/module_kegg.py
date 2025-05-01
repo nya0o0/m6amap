@@ -84,9 +84,9 @@ def get_kegg_pathway_image_url(pathway_id, ko_map):
     ko_list = "+".join([ko.split(":")[1] for ko in ko_map.values()])
     viewer_url = f"https://www.kegg.jp/kegg-bin/show_pathway?{pathway_id}/{ko_list}%09red"
 
-    # API to fetch the pathway map (highlighted)
-    url = f"https://www.kegg.jp/pathway/{pathway_id}/{ko_list}"
-    response = requests.get(viewer_url, stream=True)
+    # API to directly fetch the image
+    api_url = f"https://rest.kegg.jp/get/{pathway_id}/image"
+    response = requests.get(api_url, stream=True)
 
     if response.ok:
         # Save the image temporarily

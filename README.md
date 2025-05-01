@@ -131,30 +131,6 @@ The following Python libraries are required for the project:
 | `beautifulsoup4`  | Parsing and extracting information from HTML/XML (used in KEGG pathway fetching)            |
 | **`m6anet`**      | Specialized tool for m6A modification analysis, used for data preparation and inference      |
 
--
-
-You can install all Python dependencies using the `requirements.txt` file provided in the project repository. Run the following command:
-
-```bash
-pip install -r requirements.txt
-```
-
-**Example `requirements.txt` file:**
-
-```plaintext
-pandas
-numpy
-gffutils
-requests
-streamlit
-pyvis
-altair
-beautifulsoup4
-matplotlib
-m6anet
-```
-
-
 ---
 
 ## **7. Usage** 
@@ -174,3 +150,37 @@ pip install -r dependencies.txt
 ```bash
 streamlit run streamlit_main.py
 ```
+
+---
+
+## **8. Future Goals**
+
+**1. Streamlining User Operations**
+- **Goal**: Improve the streamlit interface and user guide
+- **Possible Methods**:
+  - Introduce a **step-by-step workflow navigator** in Streamlit using `st.tabs` or conditional logic to guide users through each analysis stage.
+  - Add more annotation and instruction for the parameters.
+
+**2.Performance Optimization**
+
+- **Parallel API Requests**: Use `concurrent.futures` or `asyncio` to fetch GO term details concurrently.
+
+**3. Cloud Deployment**
+- **Goal**: Make the tool accessible online without requiring installation.
+- **Possible Methods**:
+  - Deploy the Streamlit app on **Streamlit Community Cloud** (free option for small apps).
+  - Add support for **cloud-based storage** (e.g., AWS S3 or Google Drive) to enable collaborative workflows and easier file management.
+
+**4. Automated Summary Descriptions**
+- **Goal**: Automatically generate integrated summary reports by combining outputs from the existing analytical modules (disease associations, pathways, orthology, and protein-protein interactions) and providing human-readable descriptions of results.
+- **Possible Methods**:
+  1. **Cross-referencing with Databases**:
+     - Cross-reference results with external disease-focused databases like **OMIM**, **DisGeNET**, or **ClinVar** to enhance the biological and clinical relevance of the summary.
+     - Combine the results into a structured format using Python libraries like `pandas`.
+
+  2. **Integration with LLM APIs**:
+     - Leverage **LLM APIs** to analyze and summarize the extracted data:
+       - Send the outputs from STRING, KEGG, and QuickGO to the LLM for contextual interpretation.
+       - Ask the LLM to generate **natural language summaries** of the findings.
+
+

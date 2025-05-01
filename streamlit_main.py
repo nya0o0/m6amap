@@ -12,7 +12,7 @@ from src.module_kegg import fetch_kegg_gene_list, symbol_to_keggid, get_ko_ids, 
 from src.module_go import get_go_annotations, summarize_go_terms
 
 st.set_page_config(page_title="m6amap", layout="wide")
-st.title("m6amap :D")
+st.title("m6amap: m6A Modification Annotation and Pathway Mapping")
 
 st.sidebar.header("1. Run m6anet")
 eventalign_path = st.sidebar.text_input("Eventalign file", value="tests/data/eventalign.txt")
@@ -127,43 +127,42 @@ run_kegg_pathway = st.sidebar.button("Analyze Pathways")
 if "kegg_results" not in st.session_state:
     st.session_state.kegg_results = None
 
+# Run the analysis and store results in session state
 if run_kegg_pathway:
     try:
-        if not input_file or not output_prefix:
-            st.error("Input file or output prefix not provided.")
+        # Load genes
+        df = pd.read_csv(f"{output_prefix}_{input_file.split('/')[-1]}")
+        gene_list = df["gene_name"].dropna().unique().tolist()[:100]
+
+        st.info("🔍 Fetching KEGG gene list...")
+        symbol_to_kegg, kegg_to_symbol = fetch_kegg_gene_list(organism_code)
+
+        kegg_ids = symbol_to_keggid(gene_list, symbol_to_kegg)
+        if not kegg_ids:
+            st.error(":( No valid KEGG gene IDs found.")
         else:
-            # Load genes
-            df = pd.read_csv(f"{output_prefix}_{input_file.split('/')[-1]}")
-            gene_list = df["gene_name"].dropna().unique().tolist()[:100]
+            ko_map = get_ko_ids(kegg_ids, organism=organism_code)
+            pathway_map = get_pathways_from_ko(ko_map)
+            common_pathways = get_common_pathways(pathway_map)
+            all_pathways = sorted({p for plist in pathway_map.values() for p in plist})
+            pathways_to_display = common_pathways if common_pathways else all_pathways
 
-            st.info("🔍 Fetching KEGG gene list...")
-            symbol_to_kegg, kegg_to_symbol = fetch_kegg_gene_list(organism_code)
+            # Store results in session state
+            st.session_state.kegg_results = {
+                "gene_list": gene_list,
+                "symbol_to_kegg": symbol_to_kegg,
+                "kegg_ids": kegg_ids,
+                "ko_map": ko_map,
+                "pathway_map": pathway_map,
+                "pathways_to_display": pathways_to_display
+            }
 
-            kegg_ids = symbol_to_keggid(gene_list, symbol_to_kegg)
-            if not kegg_ids:
-                st.error(":( No valid KEGG gene IDs found.")
-            else:
-                ko_map = get_ko_ids(kegg_ids, organism=organism_code)
-                pathway_map = get_pathways_from_ko(ko_map)
-                common_pathways = get_common_pathways(pathway_map)
-                all_pathways = sorted({p for plist in pathway_map.values() for p in plist})
-                pathways_to_display = common_pathways if common_pathways else all_pathways
-
-                # Store results in session state
-                st.session_state.kegg_results = {
-                    "gene_list": gene_list,
-                    "symbol_to_kegg": symbol_to_kegg,
-                    "kegg_ids": kegg_ids,
-                    "ko_map": ko_map,
-                    "pathway_map": pathway_map,
-                    "pathways_to_display": pathways_to_display
-                }
-
-                st.success(":D KEGG analysis complete. You can now select a pathway below.")
+            st.success(":D KEGG analysis complete. You can now select a pathway below.")
 
     except Exception as e:
         st.error(f"KEGG pathway analysis failed: {e}")
 
+# If results already exist, show pathway selector and image
 if st.session_state.kegg_results:
     results = st.session_state.kegg_results
 
