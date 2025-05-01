@@ -91,8 +91,8 @@ def process_files(input_file, gtf_file, output_prefix):
         output_file = f"{output_prefix}_{input_file.split('/')[-1]}"
         annotated_modification_sites.to_csv(output_file, index=False)
 
-        st.write(f"✅ Annotation completed! File saved as `{output_file}`:D")
-        status.update(label="✅ Annotation successful", state="complete")
+        st.write(f":D Annotation completed! File saved as `{output_file}`:D")
+        status.update(label=":D Annotation successful", state="complete")
 
 def calculate_transcript_features(grouped_features, transcript_data):
     '''
