@@ -253,13 +253,16 @@ def convert_to_genome_coordinates(tx_name, tx_pos, exonsdb, txfdb):
     }
 
 def run_m6anet(eventalign_path, output_dir, n_processes=4, num_iterations=1000):
-
+    """
+    Run the m6anet pipeline (dataprep and inference) and display status in the Streamlit sidebar.
+    """
     try:
         import m6anet
     except ImportError:
         raise ImportError("m6anet is not installed. Please install it with `conda install m6anet` or `pip install m6anet`")
     
     # Step 1: Dataprep
+    st.sidebar.write("( ◡̀_◡́)▬▬█ **Running m6anet dataprep...**")
     dataprep_command = [
         "m6anet", "dataprep",
         "--eventalign", eventalign_path,
@@ -267,14 +270,16 @@ def run_m6anet(eventalign_path, output_dir, n_processes=4, num_iterations=1000):
         "--n_processes", str(n_processes)
     ]
 
-    print("Running m6anet dataprep...")
-    result = subprocess.run(dataprep_command, capture_output=True, text=True)
-    if result.returncode != 0:
+    dataprep_result = subprocess.run(dataprep_command, capture_output=True, text=True)
+    if dataprep_result.returncode != 0:
+        st.sidebar.error("(×_×) m6anet dataprep failed. Check your inputs or eventalign file.")
+        st.sidebar.write(dataprep_result.stderr)
         raise RuntimeError("m6anet dataprep failed.")
     else:
-        print("m6anet dataprep finished.")
+        st.sidebar.success("•ᴗ• m6anet dataprep completed successfully.")
 
     # Step 2: Inference
+    st.sidebar.write("( ◡̀_◡́)ᕤ **Running m6anet inference...**")
     inference_command = [
         "m6anet", "inference",
         "--input_dir", output_dir,
@@ -283,10 +288,11 @@ def run_m6anet(eventalign_path, output_dir, n_processes=4, num_iterations=1000):
         "--num_iterations", str(num_iterations)
     ]
 
-    print("Running m6anet inference...")
-    result = subprocess.run(inference_command, capture_output=True, text=True)
-    if result.returncode != 0:
+    inference_result = subprocess.run(inference_command, capture_output=True, text=True)
+    if inference_result.returncode != 0:
+        st.sidebar.error("(×_×) m6anet inference failed. Check your configuration or input data.")
+        st.sidebar.write(inference_result.stderr)
         raise RuntimeError("m6anet inference failed.")
     else:
-        print("m6anet inference finished.")
-        print(f"Output files save to {output_dir}/.")
+        st.sidebar.success("•ᴗ• m6anet inference completed successfully.")
+        st.sidebar.write(f" ✧｡٩(ˊᗜˋ )و✧*｡ Results saved to `{output_dir}`.")
