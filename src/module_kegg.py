@@ -96,3 +96,4 @@ def get_kegg_pathway_image_url(pathway_id, ko_map):
         return temp_file.name, viewer_url
     else:
         return None, viewer_url
+    

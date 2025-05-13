@@ -47,9 +47,10 @@ The user will provide:
 - **Nanopore sequencing data** (provided by the user)  
 - **GENCODE refernece anotated genome data** from gencode release.([Example](https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_47/gencode.v47.annotation.gtf.gz))
 - **M6ADD** database for linking modifications to diseases, genes, and pathways ([M6ADD Database](https://m6add.org))  
-- **Gene Ontology (GO) and KEGG Pathway Databases** 
-  - **Gene Ontology API (via QuickGO)**  [https://www.ebi.ac.uk/QuickGO/](https://www.ebi.ac.uk/QuickGO/)  
-  - **KEGG API**  [https://www.kegg.jp/kegg/rest/keggapi.html](https://www.kegg.jp/kegg/rest/keggapi.html)  
+- **Database API** 
+  - **Gene Ontology API (via QuickGO)**  https://www.ebi.ac.uk/QuickGO/
+  - **KEGG API**  https://www.kegg.jp/kegg/rest/keggapi.html 
+  - **STRING API** https://string-db.org/help/api/
 
 ---
 
@@ -141,37 +142,23 @@ The following Python libraries are required for the project:
 ```bash
 git clone https://github.com/nya0o0/project
 cd  project
-pip install -r dependencies.txt
+pip install -r requirement.txt
 ```
 
 
 **2. Run website**
 
 ```bash
-streamlit run streamlit_main.py
+streamlit run m6amap.py
 ```
+**3. Cloud version**
+
 
 ---
 
 ## **8. Future Goals**
 
-**1. Streamlining User Operations**
-- **Goal**: Improve the streamlit interface and user guide
-- **Possible Methods**:
-  - Introduce a **step-by-step workflow navigator** in Streamlit using `st.tabs` or conditional logic to guide users through each analysis stage.
-  - Add more annotation and instruction for the parameters.
-
-**2.Performance Optimization**
-
-- **Parallel API Requests**: Use `concurrent.futures` or `asyncio` to fetch GO term details concurrently.
-
-**3. Cloud Deployment**
-- **Goal**: Make the tool accessible online without requiring installation.
-- **Possible Methods**:
-  - Deploy the Streamlit app on **Streamlit Community Cloud** (free option for small apps).
-  - Add support for **cloud-based storage** (e.g., AWS S3 or Google Drive) to enable collaborative workflows and easier file management.
-
-**4. Automated Summary Descriptions**
+**Automated Summary Descriptions**
 - **Goal**: Automatically generate integrated summary reports by combining outputs from the existing analytical modules (disease associations, pathways, orthology, and protein-protein interactions) and providing human-readable descriptions of results.
 - **Possible Methods**:
   1. **Cross-referencing with Databases**:
