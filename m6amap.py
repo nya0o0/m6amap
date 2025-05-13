@@ -26,10 +26,21 @@ if use_custom_genes:
         custom_input = [g.strip() for g in gene_input_text.replace(",", "\n").splitlines() if g.strip()]
 
 # Step-by-step workflow using tabs
-tabs = st.tabs(["1. Run m6anet", "2. Annotate Results", "3. Match with m6ADD", "4. STRING Network", "5. KEGG Pathways", "6. GO Enrichment"])
+tabs = st.tabs(["README","1. Run m6anet", "2. Annotate Results", "3. Match with m6ADD", "4. STRING Network", "5. KEGG Pathways", "6. GO Enrichment"])
+
+# Tab 0: README
+with tabs[0]:
+    st.header("README")
+    try:
+        with open("README.md", "r", encoding="utf-8") as readme_file:
+            readme_content = readme_file.read()
+
+        st.markdown(readme_content, unsafe_allow_html=True)
+    except FileNotFoundError:
+        st.error("README.md file not found. Please ensure it exists in the same directory.")
 
 # Tab 1: Run m6anet
-with tabs[0]:
+with tabs[1]:
     st.header("Step 1: Run m6anet")
     st.markdown("""
         Detect m6A modifications from eventalign files.
@@ -49,7 +60,7 @@ with tabs[0]:
             st.error(f"m6anet run failed: {e}")
 
 # Tab 2: Annotate Results
-with tabs[1]:
+with tabs[2]:
     st.header("Step 2: Annotate m6anet Results")
     st.markdown("""
         Annotate detected modification sites using a GTF file.
@@ -68,7 +79,7 @@ with tabs[1]:
             st.error(f"Annotation failed: {e}")
 
 # Tab 3: Match with m6ADD
-with tabs[2]:
+with tabs[3]:
     st.header("Step 3: Match with m6ADD")
     st.markdown("""
         \Match annotated results with m6ADD data.
@@ -101,7 +112,7 @@ with tabs[2]:
 
 
 # Tab 4: STRING Interaction Network
-with tabs[3]:
+with tabs[4]:
     st.header("Step 4: STRING Interaction Network")
     st.markdown("""
         **Purpose**: Visualize interaction networks for genes.
@@ -142,7 +153,7 @@ with tabs[3]:
             st.error(f":( STRING network failed: {e}")
 
 # Tab 5: KEGG Pathways
-with tabs[4]:
+with tabs[5]:
     st.header("Step 5: KEGG Pathway Viewer")
     st.markdown("""
         **Purpose**: Map genes to KEGG pathways.
@@ -215,7 +226,7 @@ with tabs[4]:
             
 
 # Tab 6: GO Term Enrichment
-with tabs[5]:
+with tabs[6]:
     st.header("Step 6: GO Enrichment Analysis")
     st.markdown("""
         **Purpose**: Perform Gene Ontology (GO) enrichment analysis.

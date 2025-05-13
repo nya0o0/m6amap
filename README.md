@@ -140,9 +140,9 @@ The following Python libraries are required for the project:
 
 
 ```bash
-git clone https://github.com/nya0o0/project
-cd  project
-pip install -r requirement.txt
+git clone https://github.com/nya0o0/m6amap
+cd  m6amap
+pip install -r requirements.txt
 ```
 
 
@@ -153,17 +153,19 @@ streamlit run m6amap.py
 ```
 **3. Cloud version**
 
+https://m6amap.streamlit.app/
+
+Note: File uplaoding & downloading problem need to be fixed.
 
 ---
 
 ## **8. Future Goals**
 
 **Automated Summary Descriptions**
-- **Goal**: Automatically generate integrated summary reports by combining outputs from the existing analytical modules (disease associations, pathways, orthology, and protein-protein interactions) and providing human-readable descriptions of results.
+- **Goal**: Automatically generate integrated summary reports by combining outputs from the existing analytical modules (M6ADD, KEGG, STRING, GO databases) and providing human-readable descriptions of results.
 - **Possible Methods**:
   1. **Cross-referencing with Databases**:
      - Cross-reference results with external disease-focused databases like **OMIM**, **DisGeNET**, or **ClinVar** to enhance the biological and clinical relevance of the summary.
-     - Combine the results into a structured format using Python libraries like `pandas`.
 
   2. **Integration with LLM APIs**:
      - Leverage **LLM APIs** to analyze and summarize the extracted data:
